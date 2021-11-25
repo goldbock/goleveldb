@@ -30,10 +30,7 @@ import (
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
 func OpenFile(path string, o *opt.Options) (db *DB, err error) {
-	stor, err := mem.NewMemStorage()
-	if err != nil {
-		return
-	}
+	stor := mem.NewMemStorage()
 	db, err = Open(stor, o)
 	if err != nil {
 		stor.Close()
