@@ -31,7 +31,6 @@ func (lock *memStorageLock) Unlock() {
 	if ms.slock == lock {
 		ms.slock = nil
 	}
-	return
 }
 
 // memStorage is a memory-backed storage.

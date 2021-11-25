@@ -10,6 +10,8 @@ import (
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
 func TestMemStorage(t *testing.T) {
@@ -31,17 +33,17 @@ func TestMemStorage(t *testing.T) {
 		t.Fatal("storage lock failed(2): ", err)
 	}
 
-	w, err := m.Create(FileDesc{TypeTable, 1})
+	w, err := m.Create(storage.FileDesc{storage.TypeTable, 1})
 	if err != nil {
 		t.Fatal("Storage.Create: ", err)
 	}
 	w.Write([]byte("abc"))
 	w.Close()
-	if fds, _ := m.List(TypeAll); len(fds) != 1 {
+	if fds, _ := m.List(storage.TypeAll); len(fds) != 1 {
 		t.Fatal("invalid GetFiles len")
 	}
 	buf := new(bytes.Buffer)
-	r, err := m.Open(FileDesc{TypeTable, 1})
+	r, err := m.Open(storage.FileDesc{storage.TypeTable, 1})
 	if err != nil {
 		t.Fatal("Open: got error: ", err)
 	}
@@ -50,24 +52,24 @@ func TestMemStorage(t *testing.T) {
 	if got := buf.String(); got != "abc" {
 		t.Fatalf("Read: invalid value, want=abc got=%s", got)
 	}
-	if _, err := m.Open(FileDesc{TypeTable, 1}); err != nil {
+	if _, err := m.Open(storage.FileDesc{storage.TypeTable, 1}); err != nil {
 		t.Fatal("Open: got error: ", err)
 	}
-	if _, err := m.Open(FileDesc{TypeTable, 1}); err == nil {
+	if _, err := m.Open(storage.FileDesc{storage.TypeTable, 1}); err == nil {
 		t.Fatal("expecting error")
 	}
-	m.Remove(FileDesc{TypeTable, 1})
-	if fds, _ := m.List(TypeAll); len(fds) != 0 {
+	m.Remove(storage.FileDesc{storage.TypeTable, 1})
+	if fds, _ := m.List(storage.TypeAll); len(fds) != 0 {
 		t.Fatal("invalid GetFiles len", len(fds))
 	}
-	if _, err := m.Open(FileDesc{TypeTable, 1}); err == nil {
+	if _, err := m.Open(storage.FileDesc{storage.TypeTable, 1}); err == nil {
 		t.Fatal("expecting error")
 	}
 }
 
 func TestMemStorageRename(t *testing.T) {
-	fd1 := FileDesc{Type: TypeTable, Num: 1}
-	fd2 := FileDesc{Type: TypeTable, Num: 2}
+	fd1 := storage.FileDesc{Type: storage.TypeTable, Num: 1}
+	fd2 := storage.FileDesc{Type: storage.TypeTable, Num: 2}
 
 	m := NewMemStorage()
 	w, err := m.Create(fd1)
@@ -84,13 +86,13 @@ func TestMemStorageRename(t *testing.T) {
 	}
 	rd.Close()
 
-	fds, err := m.List(TypeAll)
+	fds, err := m.List(storage.TypeAll)
 	if err != nil {
 		t.Fatalf("Storage.List: %v", err)
 	}
 	for _, fd := range fds {
-		if !FileDescOk(fd) {
-			t.Errorf("Storage.List -> FileDescOk(%q)", fd)
+		if !storage.FileDescOk(fd) {
+			t.Errorf("Storage.List -> storage.FileDescOk(%q)", fd)
 		}
 	}
 
@@ -105,13 +107,13 @@ func TestMemStorageRename(t *testing.T) {
 	}
 	rd.Close()
 
-	fds, err = m.List(TypeAll)
+	fds, err = m.List(storage.TypeAll)
 	if err != nil {
 		t.Fatalf("Storage.List: %v", err)
 	}
 	for _, fd := range fds {
-		if !FileDescOk(fd) {
-			t.Errorf("Storage.List -> FileDescOk(%q)", fd)
+		if !storage.FileDescOk(fd) {
+			t.Errorf("Storage.List -> storage.FileDescOk(%q)", fd)
 		}
 	}
 }

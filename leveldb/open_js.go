@@ -10,6 +10,7 @@
 package leveldb
 
 import (
+	"errors"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage/mem"
 )
@@ -29,17 +30,7 @@ import (
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
 func OpenFile(path string, o *opt.Options) (db *DB, err error) {
-	stor, err := mem.Open(path, o.GetReadOnly())
-	if err != nil {
-		return
-	}
-	db, err = Open(stor, o)
-	if err != nil {
-		stor.Close()
-	} else {
-		db.closer = stor
-	}
-	return
+	return mem.NewMemStorage()
 }
 
 // RecoverFile recovers and opens a DB with missing or corrupted manifest files
