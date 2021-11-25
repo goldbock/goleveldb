@@ -13,6 +13,8 @@ import (
 	"io"
 )
 
+var ErrFileOpen = errors.New("leveldb/storage: file still open")
+
 // FileType represent a file type.
 type FileType int
 
@@ -55,7 +57,7 @@ type ErrCorrupted struct {
 	Err error
 }
 
-func isCorrupted(err error) bool {
+func IsCorrupted(err error) bool {
 	switch err.(type) {
 	case *ErrCorrupted:
 		return true

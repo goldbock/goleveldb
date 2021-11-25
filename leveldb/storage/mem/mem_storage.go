@@ -4,19 +4,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package storage
+package mem
 
 import (
 	"bytes"
 	"os"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
 const typeShift = 4
 
-// Verify at compile-time that typeShift is large enough to cover all FileType
+// Verify at compile-time that typeShift is large enough to cover all storage.FileType
 // values by confirming that 0 == 0.
-var _ [0]struct{} = [TypeAll >> typeShift]struct{}{}
+var _ [0]struct{} = [storage.TypeAll >> typeShift]struct{}{}
 
 type memStorageLock struct {
 	ms *memStorage
@@ -37,21 +39,21 @@ type memStorage struct {
 	mu    sync.Mutex
 	slock *memStorageLock
 	files map[uint64]*memFile
-	meta  FileDesc
+	meta  storage.FileDesc
 }
 
 // NewMemStorage returns a new memory-backed storage implementation.
-func NewMemStorage() Storage {
+func NewMemStorage() storage.Storage {
 	return &memStorage{
 		files: make(map[uint64]*memFile),
 	}
 }
 
-func (ms *memStorage) Lock() (Locker, error) {
+func (ms *memStorage) Lock() (storage.Locker, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if ms.slock != nil {
-		return nil, ErrLocked
+		return nil, storage.ErrLocked
 	}
 	ms.slock = &memStorageLock{ms: ms}
 	return ms.slock, nil
@@ -59,9 +61,9 @@ func (ms *memStorage) Lock() (Locker, error) {
 
 func (*memStorage) Log(str string) {}
 
-func (ms *memStorage) SetMeta(fd FileDesc) error {
-	if !FileDescOk(fd) {
-		return ErrInvalidFile
+func (ms *memStorage) SetMeta(fd storage.FileDesc) error {
+	if !storage.FileDescOk(fd) {
+		return storage.ErrInvalidFile
 	}
 
 	ms.mu.Lock()
@@ -70,18 +72,18 @@ func (ms *memStorage) SetMeta(fd FileDesc) error {
 	return nil
 }
 
-func (ms *memStorage) GetMeta() (FileDesc, error) {
+func (ms *memStorage) GetMeta() (storage.FileDesc, error) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if ms.meta.Zero() {
-		return FileDesc{}, os.ErrNotExist
+		return storage.FileDesc{}, os.ErrNotExist
 	}
 	return ms.meta, nil
 }
 
-func (ms *memStorage) List(ft FileType) ([]FileDesc, error) {
+func (ms *memStorage) List(ft storage.FileType) ([]storage.FileDesc, error) {
 	ms.mu.Lock()
-	var fds []FileDesc
+	var fds []storage.FileDesc
 	for x := range ms.files {
 		fd := unpackFile(x)
 		if fd.Type&ft != 0 {
@@ -92,16 +94,16 @@ func (ms *memStorage) List(ft FileType) ([]FileDesc, error) {
 	return fds, nil
 }
 
-func (ms *memStorage) Open(fd FileDesc) (Reader, error) {
-	if !FileDescOk(fd) {
-		return nil, ErrInvalidFile
+func (ms *memStorage) Open(fd storage.FileDesc) (storage.Reader, error) {
+	if !storage.FileDescOk(fd) {
+		return nil, storage.ErrInvalidFile
 	}
 
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	if m, exist := ms.files[packFile(fd)]; exist {
 		if m.open {
-			return nil, errFileOpen
+			return nil, storage.ErrFileOpen
 		}
 		m.open = true
 		return &memReader{Reader: bytes.NewReader(m.Bytes()), ms: ms, m: m}, nil
@@ -109,9 +111,9 @@ func (ms *memStorage) Open(fd FileDesc) (Reader, error) {
 	return nil, os.ErrNotExist
 }
 
-func (ms *memStorage) Create(fd FileDesc) (Writer, error) {
-	if !FileDescOk(fd) {
-		return nil, ErrInvalidFile
+func (ms *memStorage) Create(fd storage.FileDesc) (storage.Writer, error) {
+	if !storage.FileDescOk(fd) {
+		return nil, storage.ErrInvalidFile
 	}
 
 	x := packFile(fd)
@@ -120,7 +122,7 @@ func (ms *memStorage) Create(fd FileDesc) (Writer, error) {
 	m, exist := ms.files[x]
 	if exist {
 		if m.open {
-			return nil, errFileOpen
+			return nil, storage.ErrFileOpen
 		}
 		m.Reset()
 	} else {
@@ -131,9 +133,9 @@ func (ms *memStorage) Create(fd FileDesc) (Writer, error) {
 	return &memWriter{memFile: m, ms: ms}, nil
 }
 
-func (ms *memStorage) Remove(fd FileDesc) error {
-	if !FileDescOk(fd) {
-		return ErrInvalidFile
+func (ms *memStorage) Remove(fd storage.FileDesc) error {
+	if !storage.FileDescOk(fd) {
+		return storage.ErrInvalidFile
 	}
 
 	x := packFile(fd)
@@ -146,9 +148,9 @@ func (ms *memStorage) Remove(fd FileDesc) error {
 	return os.ErrNotExist
 }
 
-func (ms *memStorage) Rename(oldfd, newfd FileDesc) error {
-	if !FileDescOk(oldfd) || !FileDescOk(newfd) {
-		return ErrInvalidFile
+func (ms *memStorage) Rename(oldfd, newfd storage.FileDesc) error {
+	if !storage.FileDescOk(oldfd) || !storage.FileDescOk(newfd) {
+		return storage.ErrInvalidFile
 	}
 	if oldfd == newfd {
 		return nil
@@ -164,7 +166,7 @@ func (ms *memStorage) Rename(oldfd, newfd FileDesc) error {
 	}
 	newm, exist := ms.files[newx]
 	if (exist && newm.open) || oldm.open {
-		return errFileOpen
+		return storage.ErrFileOpen
 	}
 	delete(ms.files, oldx)
 	ms.files[newx] = oldm
@@ -189,7 +191,7 @@ func (mr *memReader) Close() error {
 	mr.ms.mu.Lock()
 	defer mr.ms.mu.Unlock()
 	if mr.closed {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	mr.m.open = false
 	return nil
@@ -207,16 +209,16 @@ func (mw *memWriter) Close() error {
 	mw.ms.mu.Lock()
 	defer mw.ms.mu.Unlock()
 	if mw.closed {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	mw.memFile.open = false
 	return nil
 }
 
-func packFile(fd FileDesc) uint64 {
+func packFile(fd storage.FileDesc) uint64 {
 	return uint64(fd.Num)<<typeShift | uint64(fd.Type)
 }
 
-func unpackFile(x uint64) FileDesc {
-	return FileDesc{FileType(x) & TypeAll, int64(x >> typeShift)}
+func unpackFile(x uint64) storage.FileDesc {
+	return storage.FileDesc{storage.FileType(x) & storage.TypeAll, int64(x >> typeShift)}
 }

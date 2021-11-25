@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package storage
+package file
 
 import (
 	"errors"
@@ -19,10 +19,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
 var (
-	errFileOpen = errors.New("leveldb/storage: file still open")
 	errReadOnly = errors.New("leveldb/storage: storage is read-only")
 )
 
@@ -91,7 +92,7 @@ type fileStorage struct {
 // same path will fail.
 //
 // The storage must be closed after use, by calling Close method.
-func OpenFile(path string, readOnly bool) (Storage, error) {
+func OpenFile(path string, readOnly bool) (storage.Storage, error) {
 	if fi, err := os.Stat(path); err == nil {
 		if !fi.IsDir() {
 			return nil, fmt.Errorf("leveldb/storage: open %s: not a directory", path)
@@ -142,17 +143,17 @@ func OpenFile(path string, readOnly bool) (Storage, error) {
 	return fs, nil
 }
 
-func (fs *fileStorage) Lock() (Locker, error) {
+func (fs *fileStorage) Lock() (storage.Locker, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return nil, ErrClosed
+		return nil, storage.ErrClosed
 	}
 	if fs.readOnly {
 		return &fileStorageLock{}, nil
 	}
 	if fs.slock != nil {
-		return nil, ErrLocked
+		return nil, storage.ErrLocked
 	}
 	fs.slock = &fileStorageLock{fs: fs}
 	return fs.slock, nil
@@ -237,7 +238,7 @@ func (fs *fileStorage) log(str string) {
 	}
 }
 
-func (fs *fileStorage) setMeta(fd FileDesc) error {
+func (fs *fileStorage) setMeta(fd storage.FileDesc) error {
 	content := fsGenName(fd) + "\n"
 	// Check and backup old CURRENT file.
 	currentPath := filepath.Join(fs.path, "CURRENT")
@@ -276,9 +277,9 @@ func (fs *fileStorage) setMeta(fd FileDesc) error {
 	return nil
 }
 
-func (fs *fileStorage) SetMeta(fd FileDesc) error {
-	if !FileDescOk(fd) {
-		return ErrInvalidFile
+func (fs *fileStorage) SetMeta(fd storage.FileDesc) error {
+	if !storage.FileDescOk(fd) {
+		return storage.ErrInvalidFile
 	}
 	if fs.readOnly {
 		return errReadOnly
@@ -287,20 +288,20 @@ func (fs *fileStorage) SetMeta(fd FileDesc) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	return fs.setMeta(fd)
 }
 
-func (fs *fileStorage) GetMeta() (FileDesc, error) {
+func (fs *fileStorage) GetMeta() (storage.FileDesc, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return FileDesc{}, ErrClosed
+		return storage.FileDesc{}, storage.ErrClosed
 	}
 	dir, err := os.Open(fs.path)
 	if err != nil {
-		return FileDesc{}, err
+		return storage.FileDesc{}, err
 	}
 	names, err := dir.Readdirnames(0)
 	// Close the dir first before checking for Readdirnames error.
@@ -308,7 +309,7 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 		fs.log(fmt.Sprintf("close dir: %v", ce))
 	}
 	if err != nil {
-		return FileDesc{}, err
+		return storage.FileDesc{}, err
 	}
 	// Try this in order:
 	// - CURRENT.[0-9]+ ('pending rename' file, descending order)
@@ -318,7 +319,7 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 	// Skip corrupted file or file that point to a missing target file.
 	type currentFile struct {
 		name string
-		fd   FileDesc
+		fd   storage.FileDesc
 	}
 	tryCurrent := func(name string) (*currentFile, error) {
 		b, err := ioutil.ReadFile(filepath.Join(fs.path, name))
@@ -328,10 +329,10 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 			}
 			return nil, err
 		}
-		var fd FileDesc
+		var fd storage.FileDesc
 		if len(b) < 1 || b[len(b)-1] != '\n' || !fsParseNamePtr(string(b[:len(b)-1]), &fd) {
 			fs.log(fmt.Sprintf("%s: corrupted content: %q", name, b))
-			err := &ErrCorrupted{
+			err := &storage.ErrCorrupted{
 				Err: errors.New("leveldb/storage: corrupted or incomplete CURRENT file"),
 			}
 			return nil, err
@@ -358,7 +359,7 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 				break
 			} else if err == os.ErrNotExist {
 				// Fallback to the next file.
-			} else if isCorrupted(err) {
+			} else if storage.IsCorrupted(err) {
 				lastCerr = err
 				// Fallback to the next file.
 			} else {
@@ -398,15 +399,15 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 			pendNames[i] = fmt.Sprintf("CURRENT.%d", num)
 		}
 		pendCur, pendErr = tryCurrents(pendNames)
-		if pendErr != nil && pendErr != os.ErrNotExist && !isCorrupted(pendErr) {
-			return FileDesc{}, pendErr
+		if pendErr != nil && pendErr != os.ErrNotExist && !storage.IsCorrupted(pendErr) {
+			return storage.FileDesc{}, pendErr
 		}
 	}
 
 	// Try CURRENT and CURRENT.bak.
 	curCur, curErr := tryCurrents([]string{"CURRENT", "CURRENT.bak"})
-	if curErr != nil && curErr != os.ErrNotExist && !isCorrupted(curErr) {
-		return FileDesc{}, curErr
+	if curErr != nil && curErr != os.ErrNotExist && !storage.IsCorrupted(curErr) {
+		return storage.FileDesc{}, curErr
 	}
 
 	// pendCur takes precedence, but guards against obsolete pendCur.
@@ -432,17 +433,17 @@ func (fs *fileStorage) GetMeta() (FileDesc, error) {
 	}
 
 	// Nothing found.
-	if isCorrupted(pendErr) {
-		return FileDesc{}, pendErr
+	if storage.IsCorrupted(pendErr) {
+		return storage.FileDesc{}, pendErr
 	}
-	return FileDesc{}, curErr
+	return storage.FileDesc{}, curErr
 }
 
-func (fs *fileStorage) List(ft FileType) (fds []FileDesc, err error) {
+func (fs *fileStorage) List(ft storage.FileType) (fds []storage.FileDesc, err error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return nil, ErrClosed
+		return nil, storage.ErrClosed
 	}
 	dir, err := os.Open(fs.path)
 	if err != nil {
@@ -463,15 +464,15 @@ func (fs *fileStorage) List(ft FileType) (fds []FileDesc, err error) {
 	return
 }
 
-func (fs *fileStorage) Open(fd FileDesc) (Reader, error) {
-	if !FileDescOk(fd) {
-		return nil, ErrInvalidFile
+func (fs *fileStorage) Open(fd storage.FileDesc) (storage.Reader, error) {
+	if !storage.FileDescOk(fd) {
+		return nil, storage.ErrInvalidFile
 	}
 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return nil, ErrClosed
+		return nil, storage.ErrClosed
 	}
 	of, err := os.OpenFile(filepath.Join(fs.path, fsGenName(fd)), os.O_RDONLY, 0)
 	if err != nil {
@@ -488,9 +489,9 @@ ok:
 	return &fileWrap{File: of, fs: fs, fd: fd}, nil
 }
 
-func (fs *fileStorage) Create(fd FileDesc) (Writer, error) {
-	if !FileDescOk(fd) {
-		return nil, ErrInvalidFile
+func (fs *fileStorage) Create(fd storage.FileDesc) (storage.Writer, error) {
+	if !storage.FileDescOk(fd) {
+		return nil, storage.ErrInvalidFile
 	}
 	if fs.readOnly {
 		return nil, errReadOnly
@@ -499,7 +500,7 @@ func (fs *fileStorage) Create(fd FileDesc) (Writer, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return nil, ErrClosed
+		return nil, storage.ErrClosed
 	}
 	of, err := os.OpenFile(filepath.Join(fs.path, fsGenName(fd)), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
@@ -509,9 +510,9 @@ func (fs *fileStorage) Create(fd FileDesc) (Writer, error) {
 	return &fileWrap{File: of, fs: fs, fd: fd}, nil
 }
 
-func (fs *fileStorage) Remove(fd FileDesc) error {
-	if !FileDescOk(fd) {
-		return ErrInvalidFile
+func (fs *fileStorage) Remove(fd storage.FileDesc) error {
+	if !storage.FileDescOk(fd) {
+		return storage.ErrInvalidFile
 	}
 	if fs.readOnly {
 		return errReadOnly
@@ -520,7 +521,7 @@ func (fs *fileStorage) Remove(fd FileDesc) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	err := os.Remove(filepath.Join(fs.path, fsGenName(fd)))
 	if err != nil {
@@ -536,9 +537,9 @@ func (fs *fileStorage) Remove(fd FileDesc) error {
 	return err
 }
 
-func (fs *fileStorage) Rename(oldfd, newfd FileDesc) error {
-	if !FileDescOk(oldfd) || !FileDescOk(newfd) {
-		return ErrInvalidFile
+func (fs *fileStorage) Rename(oldfd, newfd storage.FileDesc) error {
+	if !storage.FileDescOk(oldfd) || !storage.FileDescOk(newfd) {
+		return storage.ErrInvalidFile
 	}
 	if oldfd == newfd {
 		return nil
@@ -550,7 +551,7 @@ func (fs *fileStorage) Rename(oldfd, newfd FileDesc) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	return rename(filepath.Join(fs.path, fsGenName(oldfd)), filepath.Join(fs.path, fsGenName(newfd)))
 }
@@ -559,7 +560,7 @@ func (fs *fileStorage) Close() error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if fs.open < 0 {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	// Clear the finalizer.
 	runtime.SetFinalizer(fs, nil)
@@ -577,7 +578,7 @@ func (fs *fileStorage) Close() error {
 type fileWrap struct {
 	*os.File
 	fs     *fileStorage
-	fd     FileDesc
+	fd     storage.FileDesc
 	closed bool
 }
 
@@ -585,7 +586,7 @@ func (fw *fileWrap) Sync() error {
 	if err := fw.File.Sync(); err != nil {
 		return err
 	}
-	if fw.fd.Type == TypeManifest {
+	if fw.fd.Type == storage.TypeManifest {
 		// Also sync parent directory if file type is manifest.
 		// See: https://code.google.com/p/leveldb/issues/detail?id=190.
 		if err := syncDir(fw.fs.path); err != nil {
@@ -600,7 +601,7 @@ func (fw *fileWrap) Close() error {
 	fw.fs.mu.Lock()
 	defer fw.fs.mu.Unlock()
 	if fw.closed {
-		return ErrClosed
+		return storage.ErrClosed
 	}
 	fw.closed = true
 	fw.fs.open--
@@ -611,44 +612,44 @@ func (fw *fileWrap) Close() error {
 	return err
 }
 
-func fsGenName(fd FileDesc) string {
+func fsGenName(fd storage.FileDesc) string {
 	switch fd.Type {
-	case TypeManifest:
+	case storage.TypeManifest:
 		return fmt.Sprintf("MANIFEST-%06d", fd.Num)
-	case TypeJournal:
+	case storage.TypeJournal:
 		return fmt.Sprintf("%06d.log", fd.Num)
-	case TypeTable:
+	case storage.TypeTable:
 		return fmt.Sprintf("%06d.ldb", fd.Num)
-	case TypeTemp:
+	case storage.TypeTemp:
 		return fmt.Sprintf("%06d.tmp", fd.Num)
 	default:
 		panic("invalid file type")
 	}
 }
 
-func fsHasOldName(fd FileDesc) bool {
-	return fd.Type == TypeTable
+func fsHasOldName(fd storage.FileDesc) bool {
+	return fd.Type == storage.TypeTable
 }
 
-func fsGenOldName(fd FileDesc) string {
+func fsGenOldName(fd storage.FileDesc) string {
 	switch fd.Type {
-	case TypeTable:
+	case storage.TypeTable:
 		return fmt.Sprintf("%06d.sst", fd.Num)
 	}
 	return fsGenName(fd)
 }
 
-func fsParseName(name string) (fd FileDesc, ok bool) {
+func fsParseName(name string) (fd storage.FileDesc, ok bool) {
 	var tail string
 	_, err := fmt.Sscanf(name, "%d.%s", &fd.Num, &tail)
 	if err == nil {
 		switch tail {
 		case "log":
-			fd.Type = TypeJournal
+			fd.Type = storage.TypeJournal
 		case "ldb", "sst":
-			fd.Type = TypeTable
+			fd.Type = storage.TypeTable
 		case "tmp":
-			fd.Type = TypeTemp
+			fd.Type = storage.TypeTemp
 		default:
 			return
 		}
@@ -656,13 +657,13 @@ func fsParseName(name string) (fd FileDesc, ok bool) {
 	}
 	n, _ := fmt.Sscanf(name, "MANIFEST-%d%s", &fd.Num, &tail)
 	if n == 1 {
-		fd.Type = TypeManifest
+		fd.Type = storage.TypeManifest
 		return fd, true
 	}
 	return
 }
 
-func fsParseNamePtr(name string, fd *FileDesc) bool {
+func fsParseNamePtr(name string, fd *storage.FileDesc) bool {
 	_fd, ok := fsParseName(name)
 	if fd != nil {
 		*fd = _fd

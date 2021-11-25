@@ -4,7 +4,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package storage
+package file
 
 import (
 	"fmt"
@@ -14,21 +14,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/syndtr/goleveldb/leveldb/storage"
 )
 
 var cases = []struct {
 	oldName []string
 	name    string
-	ftype   FileType
+	ftype   storage.FileType
 	num     int64
 }{
-	{nil, "000100.log", TypeJournal, 100},
-	{nil, "000000.log", TypeJournal, 0},
-	{[]string{"000000.sst"}, "000000.ldb", TypeTable, 0},
-	{nil, "MANIFEST-000002", TypeManifest, 2},
-	{nil, "MANIFEST-000007", TypeManifest, 7},
-	{nil, "9223372036854775807.log", TypeJournal, 9223372036854775807},
-	{nil, "000100.tmp", TypeTemp, 100},
+	{nil, "000100.log", storage.TypeJournal, 100},
+	{nil, "000000.log", storage.TypeJournal, 0},
+	{[]string{"000000.sst"}, "000000.ldb", storage.TypeTable, 0},
+	{nil, "MANIFEST-000002", storage.TypeManifest, 2},
+	{nil, "MANIFEST-000007", storage.TypeManifest, 7},
+	{nil, "9223372036854775807.log", storage.TypeJournal, 9223372036854775807},
+	{nil, "000100.tmp", storage.TypeTemp, 100},
 }
 
 var invalidCases = []string{
@@ -67,7 +69,7 @@ func tempDir(t *testing.T) string {
 
 func TestFileStorage_CreateFileName(t *testing.T) {
 	for _, c := range cases {
-		if name := fsGenName(FileDesc{c.ftype, c.num}); name != c.name {
+		if name := fsGenName(storage.FileDesc{c.ftype, c.num}); name != c.name {
 			t.Errorf("invalid filename got '%s', want '%s'", name, c.name)
 		}
 	}
@@ -82,7 +84,7 @@ func TestFileStorage_MetaSetGet(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		num := rand.Int63()
-		fd := FileDesc{Type: TypeManifest, Num: num}
+		fd := storage.FileDesc{Type: storage.TypeManifest, Num: num}
 		w, err := fs.Create(fd)
 		if err != nil {
 			t.Fatalf("Create(%d): got error: %v", i, err)
@@ -234,7 +236,7 @@ func TestFileStorage_Meta(t *testing.T) {
 			default:
 				curName = fmt.Sprintf("CURRENT.%d", cur.num)
 			}
-			fd := FileDesc{Type: TypeManifest, Num: cur.num}
+			fd := storage.FileDesc{Type: storage.TypeManifest, Num: cur.num}
 			content := fmt.Sprintf("%s\n", fsGenName(fd))
 			if cur.corrupt {
 				content = content[:len(content)-1-rand.Intn(3)]
@@ -266,7 +268,7 @@ func TestFileStorage_Meta(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ret.Type != TypeManifest {
+			if ret.Type != storage.TypeManifest {
 				t.Fatalf("expecting manifest, got: %s", ret.Type)
 			}
 			if ret.Num != tc.expect {
