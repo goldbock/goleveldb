@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/onsi/gomega"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/syndtr/goleveldb/leveldb/storage/mem"
 	"github.com/syndtr/goleveldb/leveldb/testutil"
 )
 
@@ -113,7 +113,7 @@ func BenchmarkGetOverlapNonLevel0(b *testing.B) {
 }
 
 func benchmarkGetOverlap(b *testing.B, level int, size int) {
-	stor := storage.NewMemStorage()
+	stor := mem.NewMemStorage()
 	defer stor.Close()
 	s, err := newSession(stor, nil)
 	if err != nil {

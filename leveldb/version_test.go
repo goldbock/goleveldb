@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/syndtr/goleveldb/leveldb/storage/mem"
 	"github.com/syndtr/goleveldb/leveldb/testutil"
 )
 
@@ -383,7 +383,7 @@ func BenchmarkVersionStagingTrivial(b *testing.B) {
 }
 
 func benchmarkVersionStaging(b *testing.B, trivial bool, size int) {
-	stor := storage.NewMemStorage()
+	stor := mem.NewMemStorage()
 	defer stor.Close()
 	s, err := newSession(stor, nil)
 	if err != nil {

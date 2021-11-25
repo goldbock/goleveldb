@@ -31,6 +31,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/syndtr/goleveldb/leveldb/storage/file"
 	"github.com/syndtr/goleveldb/leveldb/testutil"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
@@ -1926,7 +1927,7 @@ func TestDB_CreateReopenDbOnFile(t *testing.T) {
 	defer os.RemoveAll(dbpath)
 
 	for i := 0; i < 3; i++ {
-		stor, err := storage.OpenFile(dbpath, false)
+		stor, err := file.OpenFile(dbpath, false)
 		if err != nil {
 			t.Fatalf("(%d) cannot open storage: %s", i, err)
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/syndtr/goleveldb/leveldb/storage/file"
 )
 
 func randomString(r *rand.Rand, n int) []byte {
@@ -91,7 +92,7 @@ func openDBBench(b *testing.B, noCompress bool) *dbBench {
 		ro: &opt.ReadOptions{},
 		wo: &opt.WriteOptions{},
 	}
-	p.stor, err = storage.OpenFile(benchDB, false)
+	p.stor, err = file.OpenFile(benchDB, false)
 	if err != nil {
 		b.Fatal("cannot open stor: ", err)
 	}
